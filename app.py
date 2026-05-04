@@ -1,0 +1,121 @@
+import os
+import json
+import logging
+from flask import Flask, request, jsonify
+from dotenv import load_dotenv
+
+from bot.whatsapp import send_message
+from bot.state import get_state, set_state, clear_state
+from bot.lists import is_whitelisted, is_blacklisted
+from bot.qa import get_next_question, save_lead, QUESTIONS
+from bot.email_sender import send_lead_email
+
+load_dotenv()
+app = Flask(__name__)
+
+from dashboard import dashboard
+app.register_blueprint(dashboard)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+VERIFY_TOKEN = os.environ["VERIFY_TOKEN"]
+
+# ── Webhook verification (Meta one-time setup) ──────────────────────────────
+@app.route("/webhook", methods=["GET"])
+def verify():
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        logger.info("Webhook verified by Meta.")
+        return challenge, 200
+    return "Forbidden", 403
+
+
+# ── Incoming messages ────────────────────────────────────────────────────────
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json(silent=True)
+    logger.info("Incoming payload: %s", json.dumps(data, indent=2))
+
+    try:
+        entry = data["entry"][0]["changes"][0]["value"]
+        if "messages" not in entry:
+            return jsonify({"status": "no message"}), 200
+
+        msg = entry["messages"][0]
+        phone = msg["from"]
+        text = msg.get("text", {}).get("body", "").strip()
+
+        handle_message(phone, text)
+    except (KeyError, IndexError) as e:
+        logger.warning("Payload parse error: %s", e)
+
+    return jsonify({"status": "ok"}), 200
+
+
+# ── Core message handler ─────────────────────────────────────────────────────
+def handle_message(phone: str, text: str):
+    text_lower = text.lower()
+
+    # 1. Whitelisted → personal/VIP reply
+    if is_whitelisted(phone):
+        send_message(phone, "Hi! You're reaching us directly. How can we help you today?")
+        return
+
+    # 2. Blacklisted → existing-client reply
+    if is_blacklisted(phone):
+        send_message(phone, "Hi! Thanks for reaching out. Our team will get back to you shortly.")
+        return
+
+    # 3. Unknown number ── check bot state
+    state = get_state(phone)
+
+    # 3a. No active session → send keyword prompt
+    if state is None:
+        send_message(
+            phone,
+            "Welcome! 👋 We help you find your perfect property.\n\n"
+            "Reply *PROPERTY* to get started and speak to our team."
+        )
+        set_state(phone, {"step": "waiting_keyword"})
+        return
+
+    # 3b. Waiting for keyword
+    if state.get("step") == "waiting_keyword":
+        if "property" in text_lower:
+            set_state(phone, {"step": 0, "answers": {}})
+            send_message(phone, get_next_question(0))
+        else:
+            send_message(phone, "Please reply *PROPERTY* to get started.")
+        return
+
+    # 3c. Active Q&A flow
+    step = state.get("step", 0)
+    answers = state.get("answers", {})
+
+    if isinstance(step, int) and step < len(QUESTIONS):
+        key = QUESTIONS[step]["key"]
+        answers[key] = text
+        next_step = step + 1
+
+        if next_step < len(QUESTIONS):
+            set_state(phone, {"step": next_step, "answers": answers})
+            send_message(phone, get_next_question(next_step))
+        else:
+            # All questions answered
+            answers["phone"] = phone
+            lead = save_lead(answers)
+            send_message(
+                phone,
+                "Thank you! 🙏 We've noted your requirements and our team will "
+                "reach out to you very soon with the best options."
+            )
+            send_lead_email(lead)
+            clear_state(phone)
+
+    return
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
