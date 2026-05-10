@@ -32,15 +32,15 @@ def verify():
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
+    logger.info("Incoming payload: %s", json.dumps(data, indent=2))
     try:
-        entry = data["entry"][0]["changes"][0]["value"]
-        if "messages" not in entry:
-            return jsonify({"status": "no message"}), 200
-        msg = entry["messages"][0]
-        phone = msg["from"]
-        text = msg.get("text", {}).get("body", "").strip()
-        handle_message(phone, text)
-    except (KeyError, IndexError) as e:
+        if data.get("type") == "whatsapp.inbound_message.received":
+            msg = data.get("whatsappInboundMessage", {})
+            phone = msg.get("from")
+            text = msg.get("text", {}).get("body", "").strip()
+            if phone and text:
+                handle_message(phone, text)
+    except Exception as e:
         logger.warning("Payload parse error: %s", e)
     return jsonify({"status": "ok"}), 200
 
