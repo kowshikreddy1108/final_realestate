@@ -10,6 +10,8 @@ from bot.lists import is_whitelisted, is_blacklisted
 from bot.qa import get_next_question, save_lead, QUESTIONS
 from bot.email_sender import send_lead_email
 
+import redis  # ✅ IMPORTANT
+
 load_dotenv()
 app = Flask(__name__)
 
@@ -18,6 +20,33 @@ app.register_blueprint(dashboard)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# -------------------------------
+# ✅ REDIS DEDUPLICATION BLOCK
+# -------------------------------
+redis_client = redis.Redis(
+    host=os.getenv("UPSTASH_REDIS_HOST"),
+    port=6379,
+    password=os.getenv("UPSTASH_REDIS_PASSWORD"),
+    ssl=True
+)
+
+def is_duplicate_message(msg_id: str) -> bool:
+    """Return True if message was already processed."""
+    try:
+        exists = redis_client.get(msg_id)
+        return exists is not None
+    except Exception as e:
+        logger.error("Redis get error: %s", e)
+        return False
+
+def save_message_id(msg_id: str):
+    """Save msg_id in Redis to prevent duplicates."""
+    try:
+        redis_client.set(msg_id, "1", ex=86400)  # store for 24 hours
+    except Exception as e:
+        logger.error("Redis set error: %s", e)
+
+# -------------------------------
 VERIFY_TOKEN = os.environ["VERIFY_TOKEN"]
 
 @app.route("/webhook", methods=["GET"])
@@ -49,7 +78,7 @@ def webhook():
             if not phone or not msg_id:
                 continue
 
-            # ✅ DEDUPLICATE BY MESSAGE-ID
+            # ✅ DEDUPLICATE MESSAGE
             if is_duplicate_message(msg_id):
                 logger.info("Duplicate message ignored: %s", msg_id)
                 continue
@@ -108,7 +137,7 @@ def handle_message(phone: str, text: str):
             answers["phone"] = phone
             lead = save_lead(answers)
 
-            # ✅ FIX #2 (ADD THIS)
+            # SEND EMAIL ONLY ONCE
             if state.get("step") != "done":
                 send_message(phone, "Thank you! We've noted your requirements and our team will reach out to you very soon.")
                 send_lead_email(lead)
