@@ -4,14 +4,23 @@ import requests
 
 REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
-HEADERS = {"Authorization": f"Bearer {REDIS_TOKEN}"}
-
 _DEFAULT = {"whitelist": [], "blacklist": []}
+
+def _headers():
+    return {
+        "Authorization": f"Bearer {REDIS_TOKEN}",
+        "Content-Type": "application/json"
+    }
 
 def _load() -> dict:
     try:
-        resp = requests.get(f"{REDIS_URL}/get/lists", headers=HEADERS, timeout=5)
-        result = resp.json().get("result")
+        resp = requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["GET", "lists"]],
+            timeout=5
+        )
+        result = resp.json()[0].get("result")
         if result:
             return json.loads(result)
         return _DEFAULT.copy()
@@ -20,11 +29,10 @@ def _load() -> dict:
 
 def _save(data: dict):
     try:
-        value = json.dumps(data)
         requests.post(
-            f"{REDIS_URL}/set/lists",
-            headers={**HEADERS, "Content-Type": "application/json"},
-            json=[value],
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["SET", "lists", json.dumps(data)]],
             timeout=5
         )
     except:
