@@ -34,12 +34,15 @@ def webhook():
     data = request.get_json(silent=True)
     logger.info("Incoming payload: %s", json.dumps(data, indent=2))
     try:
-        if data.get("type") == "whatsapp.inbound_message.received":
-            msg = data.get("whatsappInboundMessage", {})
-            phone = msg.get("from")
-            text = msg.get("text", {}).get("body", "").strip()
-            if phone and text:
-                handle_message(phone, text)
+        # Handle both list and single event from YCloud
+        events = data if isinstance(data, list) else [data]
+        for event in events:
+            if event.get("type") == "whatsapp.inbound_message.received":
+                msg = event.get("whatsappInboundMessage", {})
+                phone = msg.get("from")
+                text = msg.get("text", {}).get("body", "").strip()
+                if phone and text:
+                    handle_message(phone, text)
     except Exception as e:
         logger.warning("Payload parse error: %s", e)
     return jsonify({"status": "ok"}), 200
