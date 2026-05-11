@@ -1,20 +1,33 @@
+import os
 import json
-from pathlib import Path
+import requests
 
-LISTS_FILE = Path(__file__).parent.parent / "data" / "lists.json"
+REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL")
+REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+
+HEADERS = {
+    "Authorization": f"Bearer {REDIS_TOKEN}",
+    "Content-Type": "application/json"
+}
+
 _DEFAULT = {"whitelist": [], "blacklist": []}
 
 def _load() -> dict:
-    if LISTS_FILE.exists():
-        try:
-            return json.loads(LISTS_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return _DEFAULT.copy()
-    return _DEFAULT.copy()
+    try:
+        resp = requests.get(f"{REDIS_URL}/get/lists", headers=HEADERS)
+        result = resp.json().get("result")
+        if result:
+            return json.loads(result)
+        return _DEFAULT.copy()
+    except:
+        return _DEFAULT.copy()
 
 def _save(data: dict):
-    LISTS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LISTS_FILE.write_text(json.dumps(data, indent=2))
+    try:
+        encoded = json.dumps(data)
+        requests.get(f"{REDIS_URL}/set/lists/{encoded}", headers=HEADERS)
+    except:
+        pass
 
 def _clean(phone: str) -> str:
     return phone.strip().replace("+", "").replace(" ", "")
