@@ -4,12 +4,22 @@ import requests
 
 REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
-HEADERS = {"Authorization": f"Bearer {REDIS_TOKEN}"}
+
+def _headers():
+    return {
+        "Authorization": f"Bearer {REDIS_TOKEN}",
+        "Content-Type": "application/json"
+    }
 
 def get_state(phone: str) -> dict | None:
     try:
-        resp = requests.get(f"{REDIS_URL}/get/state:{phone}", headers=HEADERS, timeout=5)
-        result = resp.json().get("result")
+        resp = requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["GET", f"state:{phone}"]],
+            timeout=5
+        )
+        result = resp.json()[0].get("result")
         if result:
             return json.loads(result)
         return None
@@ -18,11 +28,10 @@ def get_state(phone: str) -> dict | None:
 
 def set_state(phone: str, state: dict):
     try:
-        value = json.dumps(state)
         requests.post(
-            f"{REDIS_URL}/set/state:{phone}",
-            headers={**HEADERS, "Content-Type": "application/json"},
-            json=[value],
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["SET", f"state:{phone}", json.dumps(state)]],
             timeout=5
         )
     except:
@@ -30,6 +39,11 @@ def set_state(phone: str, state: dict):
 
 def clear_state(phone: str):
     try:
-        requests.get(f"{REDIS_URL}/del/state:{phone}", headers=HEADERS, timeout=5)
+        requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["DEL", f"state:{phone}"]],
+            timeout=5
+        )
     except:
         pass
