@@ -5,6 +5,9 @@ import requests
 REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
 REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
 
+# 90 days in seconds â€” prevents Upstash free tier from evicting state keys
+STATE_TTL = 60 * 60 * 24 * 90
+
 def _headers():
     return {
         "Authorization": f"Bearer {REDIS_TOKEN}",
@@ -31,7 +34,8 @@ def set_state(phone: str, state: dict):
         requests.post(
             f"{REDIS_URL}/pipeline",
             headers=_headers(),
-            json=[["SET", f"state:{phone}", json.dumps(state)]],
+            # EX = expire in seconds. This prevents Upstash from randomly evicting keys.
+            json=[["SET", f"state:{phone}", json.dumps(state), "EX", STATE_TTL]],
             timeout=5
         )
     except:
@@ -47,26 +51,3 @@ def clear_state(phone: str):
         )
     except:
         pass
-# Deduplication message storage (24 hours)
-def is_duplicate_message(msg_id: str) -> bool:
-    try:
-        resp = requests.post(
-            f"{REDIS_URL}/pipeline",
-            headers=_headers(),
-            json=[["EXISTS", f"msg:{msg_id}"]],
-            timeout=5
-        )
-        return resp.json()[0]["result"] == 1
-    except:
-        return False
-
-def save_message_id(msg_id: str):
-    try:
-        requests.post(
-            f"{REDIS_URL}/pipeline",
-            headers=_headers(),
-            json=[["SETEX", f"msg:{msg_id}", "86400", "1"]],
-            timeout=5
-        )
-    except:
-        pass        
