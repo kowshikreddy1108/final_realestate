@@ -47,3 +47,26 @@ def clear_state(phone: str):
         )
     except:
         pass
+# Deduplication message storage (24 hours)
+def is_duplicate_message(msg_id: str) -> bool:
+    try:
+        resp = requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["EXISTS", f"msg:{msg_id}"]],
+            timeout=5
+        )
+        return resp.json()[0]["result"] == 1
+    except:
+        return False
+
+def save_message_id(msg_id: str):
+    try:
+        requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_headers(),
+            json=[["SETEX", f"msg:{msg_id}", "86400", "1"]],
+            timeout=5
+        )
+    except:
+        pass        
