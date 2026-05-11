@@ -107,8 +107,12 @@ def handle_message(phone: str, text: str):
         else:
             answers["phone"] = phone
             lead = save_lead(answers)
-            send_message(phone, "Thank you! We've noted your requirements and our team will reach out to you very soon.")
-            send_lead_email(lead)
+
+            # ✅ FIX #2 (ADD THIS)
+            if state.get("step") != "done":
+                send_message(phone, "Thank you! We've noted your requirements and our team will reach out to you very soon.")
+                send_lead_email(lead)
+
             set_state(phone, {"step": "done"})
 
 if __name__ == "__main__":
