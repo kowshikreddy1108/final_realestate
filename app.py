@@ -33,18 +33,35 @@ def verify():
 def webhook():
     data = request.get_json(silent=True)
     logger.info("Incoming payload: %s", json.dumps(data, indent=2))
+
     try:
-        # Handle both list and single event from YCloud
         events = data if isinstance(data, list) else [data]
+
         for event in events:
-            if event.get("type") == "whatsapp.inbound_message.received":
-                msg = event.get("whatsappInboundMessage", {})
-                phone = msg.get("from")
-                text = msg.get("text", {}).get("body", "").strip()
-                if phone and text:
-                    handle_message(phone, text)
+            if event.get("type") != "whatsapp.inbound_message.received":
+                continue
+
+            msg = event.get("whatsappInboundMessage", {})
+            phone = msg.get("from")
+            text  = msg.get("text", {}).get("body", "").strip()
+            msg_id = msg.get("id")  # IMPORTANT
+
+            if not phone or not msg_id:
+                continue
+
+            # ✅ DEDUPLICATE BY MESSAGE-ID
+            if is_duplicate_message(msg_id):
+                logger.info("Duplicate message ignored: %s", msg_id)
+                continue
+
+            save_message_id(msg_id)
+
+            if text:
+                handle_message(phone, text)
+
     except Exception as e:
         logger.warning("Payload parse error: %s", e)
+
     return jsonify({"status": "ok"}), 200
 
 def handle_message(phone: str, text: str):
