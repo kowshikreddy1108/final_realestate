@@ -1,10 +1,16 @@
+import os
 import json
+import requests
 from datetime import datetime
-from pathlib import Path
 
-LEADS_FILE = Path(__file__).parent.parent / "data" / "leads.json"
+REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL")
+REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
 
-# ── Question definitions ─────────────────────────────────────────────────────
+HEADERS = {
+    "Authorization": f"Bearer {REDIS_TOKEN}",
+    "Content-Type": "application/json"
+}
+
 QUESTIONS = [
     {
         "key": "name",
@@ -28,32 +34,38 @@ QUESTIONS = [
     },
 ]
 
-
 def get_next_question(step: int) -> str:
     return QUESTIONS[step]["text"]
 
-
 def save_lead(answers: dict) -> dict:
-    leads = _load_leads()
-    lead = {
-        "id": len(leads) + 1,
-        "timestamp": datetime.now().strftime("%d %b %Y %H:%M"),
-        **answers,
-    }
-    leads.append(lead)
-    LEADS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    LEADS_FILE.write_text(json.dumps(leads, indent=2))
-    return lead
-
+    try:
+        # Get existing leads
+        leads = get_all_leads()
+        lead = {
+            "id": len(leads) + 1,
+            "timestamp": datetime.now().strftime("%d %b %Y %H:%M"),
+            **answers,
+        }
+        leads.append(lead)
+        # Save back to Upstash
+        data = json.dumps(leads)
+        requests.get(f"{REDIS_URL}/set/all_leads/{data}", headers=HEADERS)
+        return lead
+    except Exception as e:
+        return answers
 
 def get_all_leads() -> list:
-    return _load_leads()
+    try:
+        resp = requests.get(f"{REDIS_URL}/get/all_leads", headers=HEADERS)
+        result = resp.json().get("result")
+        if result:
+            return json.loads(result)
+        return []
+    except:
+        return []
 
-
-def _load_leads() -> list:
-    if LEADS_FILE.exists():
-        try:
-            return json.loads(LEADS_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return []
-    return []
+def clear_all_leads():
+    try:
+        requests.get(f"{REDIS_URL}/del/all_leads", headers=HEADERS)
+    except:
+        pass
