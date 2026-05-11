@@ -1,35 +1,34 @@
-import json
 import os
-from pathlib import Path
+import json
+import requests
 
-STATE_FILE = Path(__file__).parent.parent / "data" / "state.json"
+REDIS_URL = os.environ["UPSTASH_REDIS_REST_URL"]
+REDIS_TOKEN = os.environ["UPSTASH_REDIS_REST_TOKEN"]
 
+HEADERS = {
+    "Authorization": f"Bearer {REDIS_TOKEN}",
+    "Content-Type": "application/json"
+}
 
-def _load() -> dict:
-    if STATE_FILE.exists():
-        try:
-            return json.loads(STATE_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
+def _get(key: str):
+    resp = requests.get(f"{REDIS_URL}/get/{key}", headers=HEADERS)
+    result = resp.json().get("result")
+    if result:
+        return json.loads(result)
+    return None
 
+def _set(key: str, value: dict):
+    data = json.dumps(value)
+    requests.post(f"{REDIS_URL}/set/{key}", headers=HEADERS, json=[data])
 
-def _save(data: dict):
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(data, indent=2))
-
+def _delete(key: str):
+    requests.delete(f"{REDIS_URL}/del/{key}", headers=HEADERS)
 
 def get_state(phone: str) -> dict | None:
-    return _load().get(phone)
-
+    return _get(f"state:{phone}")
 
 def set_state(phone: str, state: dict):
-    data = _load()
-    data[phone] = state
-    _save(data)
-
+    _set(f"state:{phone}", state)
 
 def clear_state(phone: str):
-    data = _load()
-    data.pop(phone, None)
-    _save(data)
+    _delete(f"state:{phone}")
