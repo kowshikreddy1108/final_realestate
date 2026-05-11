@@ -10,119 +10,72 @@ from bot.lists import is_whitelisted, is_blacklisted
 from bot.qa import get_next_question, save_lead, QUESTIONS
 from bot.email_sender import send_lead_email
 
-import requests
-
 load_dotenv()
 app = Flask(__name__)
 
 from dashboard import dashboard
 app.register_blueprint(dashboard)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# -------------------------------
-# ✅ CORRECT UPSTASH REDIS REST API
-# -------------------------------
-UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL")
-UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-
-def redis_set(key, value, expire=86400):
-    """Set a key with expiry using Upstash REST API"""
-    try:
-        payload = {
-            "command": "SET",
-            "args": [key, value, "EX", expire]
-        }
-        res = requests.post(
-            UPSTASH_URL,
-            json=payload,
-            headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        )
-        return res.json()
-    except Exception as e:
-        print("Redis SET Error:", e)
-        return None
-
-
-def redis_get(key):
-    """Get a key using Upstash REST API"""
-    try:
-        payload = {
-            "command": "GET",
-            "args": [key]
-        }
-        res = requests.post(
-            UPSTASH_URL,
-            json=payload,
-            headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}
-        )
-        return res.json().get("result")
-    except Exception as e:
-        print("Redis GET Error:", e)
-        return None
-
-
-def is_duplicate_message(msg_id: str) -> bool:
-    found = redis_get(msg_id)
-    return found is not None
-
-
-def save_message_id(msg_id: str):
-    redis_set(msg_id, "1", expire=86400)
-
-
-# -------------------------------
 VERIFY_TOKEN = os.environ["VERIFY_TOKEN"]
+
+# ── Deduplication: track processed message IDs ────────────────────────────
+import requests as _requests
+
+REDIS_URL = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
+REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
+_REDIS_HEADERS = {
+    "Authorization": f"Bearer {REDIS_TOKEN}",
+    "Content-Type": "application/json"
+}
+
+def _is_duplicate(msg_id: str) -> bool:
+    """Returns True if message already processed. Marks it as processed."""
+    try:
+        # SET with NX (only set if not exists) and EX 300 (expire in 5 minutes)
+        resp = _requests.post(
+            f"{REDIS_URL}/pipeline",
+            headers=_REDIS_HEADERS,
+            json=[["SET", f"msgid:{msg_id}", "1", "NX", "EX", "300"]],
+            timeout=5
+        )
+        result = resp.json()[0].get("result")
+        # If result is "OK" → first time seeing this message → not duplicate
+        # If result is None → already exists → duplicate
+        return result is None
+    except:
+        return False
 
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
-    
     if mode == "subscribe" and token == VERIFY_TOKEN:
         return challenge, 200
-    
     return "Forbidden", 403
-
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True)
     logger.info("Incoming payload: %s", json.dumps(data, indent=2))
-
     try:
         events = data if isinstance(data, list) else [data]
-
         for event in events:
-            if event.get("type") != "whatsapp.inbound_message.received":
-                continue
-
-            msg = event.get("whatsappInboundMessage", {})
-            phone = msg.get("from")
-            text  = msg.get("text", {}).get("body", "").strip()
-            msg_id = msg.get("id")  # IMPORTANT
-
-            if not phone or not msg_id:
-                continue
-
-            # ✅ DEDUPLICATION
-            if is_duplicate_message(msg_id):
-                logger.info("Duplicate message ignored: %s", msg_id)
-                continue
-
-            save_message_id(msg_id)
-
-            # PROCESS MESSAGE
-            if text:
-                handle_message(phone, text)
-
+            if event.get("type") == "whatsapp.inbound_message.received":
+                msg = event.get("whatsappInboundMessage", {})
+                msg_id = msg.get("id", "")
+                phone = msg.get("from")
+                text = msg.get("text", {}).get("body", "").strip()
+                if phone and text:
+                    if _is_duplicate(msg_id):
+                        logger.info("Duplicate message %s ignored", msg_id)
+                        continue
+                    handle_message(phone, text)
     except Exception as e:
         logger.warning("Payload parse error: %s", e)
-
     return jsonify({"status": "ok"}), 200
-
 
 def handle_message(phone: str, text: str):
     text_lower = text.lower()
@@ -142,11 +95,8 @@ def handle_message(phone: str, text: str):
         return
 
     if state is None:
-        send_message(
-            phone,
-            "Welcome! We help you find your perfect property.\n\nReply *PROPERTY* to get started and speak to our team."
-        )
         set_state(phone, {"step": "waiting_keyword"})
+        send_message(phone, "Welcome! We help you find your perfect property.\n\nReply *PROPERTY* to get started and speak to our team.")
         return
 
     if state.get("step") == "waiting_keyword":
@@ -163,23 +113,16 @@ def handle_message(phone: str, text: str):
     if isinstance(step, int) and step < len(QUESTIONS):
         key = QUESTIONS[step]["key"]
         answers[key] = text
-
         next_step = step + 1
-
         if next_step < len(QUESTIONS):
             set_state(phone, {"step": next_step, "answers": answers})
             send_message(phone, get_next_question(next_step))
         else:
             answers["phone"] = phone
-            lead = save_lead(answers)
-
-            # SEND EMAIL ONLY ONCE
-            if state.get("step") != "done":
-                send_message(phone, "Thank you! We've noted your requirements and our team will reach out to you very soon.")
-                send_lead_email(lead)
-
             set_state(phone, {"step": "done"})
-
+            lead = save_lead(answers)
+            send_message(phone, "Thank you! We've noted your requirements and our team will reach out to you very soon.")
+            send_lead_email(lead)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
