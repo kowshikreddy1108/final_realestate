@@ -12,8 +12,12 @@ HEADERS = {
 
 def get_state(phone: str) -> dict | None:
     try:
-        resp = requests.get(f"{REDIS_URL}/get/state:{phone}", headers=HEADERS)
-        result = resp.json().get("result")
+        resp = requests.post(
+            f"{REDIS_URL}/get",
+            headers=HEADERS,
+            json={"commands": [["GET", f"state:{phone}"]]}
+        )
+        result = resp.json()[0].get("result")
         if result:
             return json.loads(result)
         return None
@@ -22,13 +26,20 @@ def get_state(phone: str) -> dict | None:
 
 def set_state(phone: str, state: dict):
     try:
-        data = json.dumps(state)
-        requests.get(f"{REDIS_URL}/set/state:{phone}/{data}", headers=HEADERS)
+        requests.post(
+            f"{REDIS_URL}/set",
+            headers=HEADERS,
+            json={"commands": [["SET", f"state:{phone}", json.dumps(state)]]}
+        )
     except:
         pass
 
 def clear_state(phone: str):
     try:
-        requests.get(f"{REDIS_URL}/del/state:{phone}", headers=HEADERS)
+        requests.post(
+            f"{REDIS_URL}/del",
+            headers=HEADERS,
+            json={"commands": [["DEL", f"state:{phone}"]]}
+        )
     except:
         pass
