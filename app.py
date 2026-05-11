@@ -20,30 +20,34 @@ app.register_blueprint(dashboard)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import requests
+
 # -------------------------------
 # ✅ REDIS DEDUPLICATION BLOCK
 # -------------------------------
-import requests
+UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL")
+UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
 
-UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
-UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
-
-def redis_set(key, value, expire=86400):
-    url = f"{UPSTASH_REDIS_REST_URL}/set/{key}/{value}?EX={expire}"
-    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+def redis_set(key, value):
     try:
-        requests.get(url, headers=headers)
+        response = requests.post(
+            f"{UPSTASH_URL}/set/{key}/{value}",
+            headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+        )
+        return response.json()
     except Exception as e:
-        logger.error("Redis SET error: %s", e)
+        print("Redis SET Error:", e)
+        return None
 
 def redis_get(key):
-    url = f"{UPSTASH_REDIS_REST_URL}/get/{key}"
-    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
     try:
-        resp = requests.get(url, headers=headers).json()
-        return resp.get("result")
+        response = requests.get(
+            f"{UPSTASH_URL}/get/{key}",
+            headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"}
+        )
+        return response.json().get("result")
     except Exception as e:
-        logger.error("Redis GET error: %s", e)
+        print("Redis GET Error:", e)
         return None
 
 def is_duplicate_message(msg_id: str) -> bool:
