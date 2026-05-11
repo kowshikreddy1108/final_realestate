@@ -39,7 +39,6 @@ def get_next_question(step: int) -> str:
 
 def save_lead(answers: dict) -> dict:
     try:
-        # Get existing leads
         leads = get_all_leads()
         lead = {
             "id": len(leads) + 1,
@@ -47,17 +46,23 @@ def save_lead(answers: dict) -> dict:
             **answers,
         }
         leads.append(lead)
-        # Save back to Upstash
-        data = json.dumps(leads)
-        requests.get(f"{REDIS_URL}/set/all_leads/{data}", headers=HEADERS)
+        requests.post(
+            f"{REDIS_URL}/set",
+            headers=HEADERS,
+            json={"commands": [["SET", "all_leads", json.dumps(leads)]]}
+        )
         return lead
     except Exception as e:
         return answers
 
 def get_all_leads() -> list:
     try:
-        resp = requests.get(f"{REDIS_URL}/get/all_leads", headers=HEADERS)
-        result = resp.json().get("result")
+        resp = requests.post(
+            f"{REDIS_URL}/get",
+            headers=HEADERS,
+            json={"commands": [["GET", "all_leads"]]}
+        )
+        result = resp.json()[0].get("result")
         if result:
             return json.loads(result)
         return []
