@@ -23,28 +23,37 @@ logger = logging.getLogger(__name__)
 # -------------------------------
 # ✅ REDIS DEDUPLICATION BLOCK
 # -------------------------------
-redis_client = redis.Redis(
-    host=os.getenv("UPSTASH_REDIS_HOST"),
-    port=6379,
-    password=os.getenv("UPSTASH_REDIS_PASSWORD"),
-    ssl=True
-)
+import requests
+
+UPSTASH_REDIS_REST_URL = os.getenv("UPSTASH_REDIS_REST_URL")
+UPSTASH_REDIS_REST_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+
+def redis_set(key, value, expire=86400):
+    url = f"{UPSTASH_REDIS_REST_URL}/set/{key}/{value}?EX={expire}"
+    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+    try:
+        requests.get(url, headers=headers)
+    except Exception as e:
+        logger.error("Redis SET error: %s", e)
+
+def redis_get(key):
+    url = f"{UPSTASH_REDIS_REST_URL}/get/{key}"
+    headers = {"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+    try:
+        resp = requests.get(url, headers=headers).json()
+        return resp.get("result")
+    except Exception as e:
+        logger.error("Redis GET error: %s", e)
+        return None
 
 def is_duplicate_message(msg_id: str) -> bool:
     """Return True if message was already processed."""
-    try:
-        exists = redis_client.get(msg_id)
-        return exists is not None
-    except Exception as e:
-        logger.error("Redis get error: %s", e)
-        return False
+    exists = redis_get(msg_id)
+    return exists is not None
 
 def save_message_id(msg_id: str):
-    """Save msg_id in Redis to prevent duplicates."""
-    try:
-        redis_client.set(msg_id, "1", ex=86400)  # store for 24 hours
-    except Exception as e:
-        logger.error("Redis set error: %s", e)
+    """Save msg_id in Redis for deduplication."""
+    redis_set(msg_id, "1", expire=86400)
 
 # -------------------------------
 VERIFY_TOKEN = os.environ["VERIFY_TOKEN"]
