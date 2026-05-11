@@ -14,8 +14,12 @@ _DEFAULT = {"whitelist": [], "blacklist": []}
 
 def _load() -> dict:
     try:
-        resp = requests.get(f"{REDIS_URL}/get/lists", headers=HEADERS)
-        result = resp.json().get("result")
+        resp = requests.post(
+            f"{REDIS_URL}/get",
+            headers=HEADERS,
+            json={"commands": [["GET", "lists"]]}
+        )
+        result = resp.json()[0].get("result")
         if result:
             return json.loads(result)
         return _DEFAULT.copy()
@@ -24,8 +28,11 @@ def _load() -> dict:
 
 def _save(data: dict):
     try:
-        encoded = json.dumps(data)
-        requests.get(f"{REDIS_URL}/set/lists/{encoded}", headers=HEADERS)
+        requests.post(
+            f"{REDIS_URL}/set",
+            headers=HEADERS,
+            json={"commands": [["SET", "lists", json.dumps(data)]]}
+        )
     except:
         pass
 
