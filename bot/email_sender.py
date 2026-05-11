@@ -6,14 +6,21 @@ from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
-def send_lead_email(lead: dict):
-    """Send lead email via Gmail SMTP."""
+def send_lead_email(lead: dict) -> bool:
+    """
+    Send lead email via Gmail SMTP.
+    Returns True if sent successfully, False if failed.
+    """
     try:
-        sender     = os.environ["LEAD_EMAIL_SENDER"]
-        recipient  = os.environ["LEAD_EMAIL_RECIPIENT"]
+        sender       = os.environ["LEAD_EMAIL_SENDER"]
+        recipient    = os.environ["LEAD_EMAIL_RECIPIENT"]
         app_password = os.environ["GMAIL_APP_PASSWORD"]
 
-        subject = f"New Property Lead — {lead.get('name', 'Unknown')}"
+        if not sender or not recipient or not app_password:
+            logger.error("EMAIL CONFIG MISSING: Check LEAD_EMAIL_SENDER, LEAD_EMAIL_RECIPIENT, GMAIL_APP_PASSWORD env vars")
+            return False
+
+        subject = f"New Property Lead â€” {lead.get('name', 'Unknown')}"
         body    = _format_body(lead)
 
         message = MIMEMultipart("alternative")
@@ -22,14 +29,28 @@ def send_lead_email(lead: dict):
         message["To"]      = recipient
         message.attach(MIMEText(body, "html"))
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        logger.info("Attempting to send email to %s for lead: %s", recipient, lead.get("name"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as server:
             server.login(sender, app_password)
             server.sendmail(sender, recipient, message.as_string())
 
-        logger.info("Lead email sent for %s", lead.get("name"))
+        logger.info("âœ… Lead email sent successfully for %s", lead.get("name"))
+        return True
 
+    except smtplib.SMTPAuthenticationError:
+        logger.error("âŒ EMAIL AUTH FAILED: Gmail app password is wrong or 2FA not set up correctly")
+        return False
+    except smtplib.SMTPException as e:
+        logger.error("âŒ SMTP ERROR sending email: %s", str(e))
+        return False
+    except KeyError as e:
+        logger.error("âŒ MISSING ENV VAR for email: %s", str(e))
+        return False
     except Exception as e:
-        logger.error("Failed to send lead email: %s", e)
+        logger.error("âŒ UNEXPECTED email error: %s", str(e))
+        return False
+
 
 def _format_body(lead: dict) -> str:
     rows = "".join(
