@@ -46,7 +46,9 @@ def _is_duplicate(msg_id: str) -> bool:
         return result is None
     except:
         return False
-
+@app.route("/health")
+def health():
+    return "ok", 200
 @app.route("/webhook", methods=["GET"])
 def verify():
     mode = request.args.get("hub.mode")
