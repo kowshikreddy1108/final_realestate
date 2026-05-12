@@ -89,4 +89,4 @@ def api_add_blacklist():
 @auth.login_required
 def api_remove_blacklist(phone):
     remove_from_blacklist(phone)
-    return jsonify({"status": "removed"}): "removed"})
+    return jsonify({"status": "removed"})
