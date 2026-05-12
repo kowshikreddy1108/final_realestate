@@ -9,7 +9,7 @@ REDIS_TOKEN = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
 
 QUESTIONS = [
     {"key": "name", "text": "Great! Let's get started. 😊\n\nWhat is your *full name*?"},
-    {"key": "area", "text": "Which *area or locality* are you looking in?\n(e.g.Aanandapuram(achyutaapuram),bimili,bhogapuram,duvvada,tharulavada,thadarapuvalasa)"},
+    {"key": "area", "text": "Which *area or locality* are you looking in?\n(e.g.Anandapuram(atchutapuram),Bheemili,Bhogapuram,Duvvada,Tarluvada,Thagarapuvalasa)"},
     {"key": "budget", "text": "What is your *budget*?\n(e.g. 50 lakhs, 1.2 crore, 30k/month rent)"},
     {"key": "intent", "text": "Are you looking to *Buy* or *Rent*?"},
     {"key": "bhk", "text": "How many *BHK* (bedrooms) do you need?\n(e.g. 1BHK, 2BHK, 3BHK, Office space)"},
