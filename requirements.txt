@@ -7,3 +7,4 @@ gunicorn>=21.0
 redis>=5.0
 pytz
 flask-httpauth
+werkzeug
