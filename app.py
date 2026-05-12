@@ -171,9 +171,8 @@ def handle_message(phone: str, text: str):
     # New customer
     if state is None:
         set_state(phone, {"step": "waiting_keyword"})
-        send_message(phone, "Welcome! We help you find your perfect property.\n\nReply *PROPERTY* to get started and speak to our team.")
-        return
-
+        send_message(phone, "🏡 *Welcome to VizagLands!*\n\nYour trusted partner in finding the perfect property in Vizag.\n\nWe're here to make your property journey smooth and stress-free. 🌟\n\nReply PROPERTY to connect with our team.")
+        return 
     if state.get("step") == "waiting_keyword":
         if "property" in text_lower:
             set_state(phone, {"step": 0, "answers": {}})
