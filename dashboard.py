@@ -90,3 +90,6 @@ def api_add_blacklist():
 def api_remove_blacklist(phone):
     remove_from_blacklist(phone)
     return jsonify({"status": "removed"})
+
+
+# written by kowshik reddy 
